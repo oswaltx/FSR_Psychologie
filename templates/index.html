@@ -1,0 +1,16 @@
+<h1>Fachschaftszeug</h1>
+<a href="/inbox">Mail</a>
+<br>
+<a href="download_verzeichnis.html">Studienmaterial</a>
+<br>
+<a href="">FSR Webseite der Uni Köln</a>
+
+{% extends "layout.html" %}
+
+{% block content %}
+   {% if session.name %}
+      You are registered as {{ session.name }}. <a href="/logout">Logout</a>.
+   {% else %}
+      You are not registered. <a href="/login">Login</a>.
+   {% endif %}
+{% endblock %}

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <title>Simple Mail Interface</title>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <style>
+    body {
+      padding-left: 10%;
+      padding-right: 10%;
+    }
+    p {
+      padding-bottom: 0px;
+      padding-top: 0px;
+      margin-top: 0px;
+      margin-bottom: 0px;
+    }
+    p.Betreff {
+      color: rgb(0, 0, 0);
+      font-size: large;
+    }
+    p.Mail_Inhalt {
+      font-size: small;
+      color: grey;
+    }
+    p.Absender {
+      color: grey;
+    }
+    .Mail {
+      padding-bottom: 10px;
+      background-color: lightgray;
+    }
+    .Mail:hover {
+      outline: auto;
+      outline-color: black;
+      background-color: white;
+    }
+    .unread {
+      background-color: #e0f7fa; /* Light blue for unread */
+    }
+    .read {
+      background-color: #fff3e0; /* Light orange for read but unanswered */
+    }
+    .answered {
+      background-color: #c8e6c9; /* Light green for answered */
+    }
+    #replyModal {
+      display: none;
+      background-color: white;
+      border: 1px solid black;
+      padding: 10px;
+      position: absolute;
+      z-index: 1000;
+    }
+
+    /* additional styles */
+    .Mail { padding:8px; margin-bottom:8px; border-radius:4px; }
+    .Mail.unread { background:#e0f7fa; }
+    .Mail.read { background:#fff3e0; }
+    .Mail.answered { background:#c8e6c9; }
+    .replyModal { margin-top:8px; padding:8px; border:1px solid #ccc; background:#fff; }
+    .answerItem { margin-top:8px; padding:8px; border-left:3px solid #4caf50; background:#f1fff3; }
+    .Mail:focus { outline:3px solid #1976d2; background:white; }
+  </style>
+</head>
+<header>
+    <h1>Servus {{ session.name }},<br> du hast 10 Neue Mails</h1>
+</header>
+<body>
+<input type="search" placeholder="Betreff: Heiko"><button onclick='searchPage()'>Suchen</button>
+<div class="inbox">
+    {% for mail in session.mails %}
+        <div class="Mail unread" id="Mail_{{ loop.index }}">
+            <p class="Betreff">{{ mail[0] }}</p>
+            <p class="Absender">{{ mail[1] }}</p>
+            <p class="Mail_Inhalt">{{ mail[2] }}</p>
+            <button class="Answer" id="replyButton_{{ loop.index }}">Antworten</button>
+        </div>
+    {% endfor %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  let mails = Array.from(document.querySelectorAll('.Mail'));
+  mails.forEach(m => m.setAttribute('tabindex','0'));
+  let currentIndex = -1;
+
+  function refreshMails() {
+    mails = Array.from(document.querySelectorAll('.Mail'));
+  }
+
+  function focusMail(i) {
+    if (i < 0 || i >= mails.length) return;
+    // remove any open reply modals before focusing a different mail
+    document.querySelectorAll('.replyModal').forEach(n => n.remove());
+    currentIndex = i;
+    const mail = mails[i];
+    mail.focus();
+    mail.classList.remove('unread');
+    mail.classList.add('read');
+  }
+
+  mails.forEach((mail, idx) => {
+    mail.addEventListener('click', () => focusMail(idx));
+    const btn = mail.querySelector('.Answer');
+    if (btn) btn.addEventListener('click', e => {
+      e.stopPropagation();
+      openReplyModal(mail.id);
+    });
+  });
+
+  // openReplyModal: erzeugt textarea mit data-mail statt komplexer id
+  function openReplyModal(mailId) {
+    const parent = document.getElementById(mailId);
+    if (!parent) return;
+    const existing = document.getElementById('replyModal_' + mailId);
+    if (existing) return;
+    const modal = document.createElement('div');
+    modal.className = 'replyModal';
+    modal.id = 'replyModal_' + mailId;
+    modal.innerHTML = `
+      <textarea data-mail="${mailId}" class="replyContent" rows="4" style="width:100%" placeholder="Ihre Antwort..."></textarea>
+      <div style="margin-top:6px">
+        <button data-mail="${mailId}" class="sendBtn">Senden</button>
+        <button data-mail="${mailId}" class="closeBtn">Abbrechen</button>
+      </div>`;
+    parent.appendChild(modal);
+    modal.querySelector('textarea').focus();
+  }
+
+  // delegated click handler
+  document.addEventListener('click', (e) => {
+    const send = e.target.closest('.sendBtn');
+    if (send) {
+      const mailId = send.dataset.mail;
+      console.log('Send clicked for', mailId);
+      sendReplyNested(mailId);
+      return;
+    }
+    const close = e.target.closest('.closeBtn');
+    if (close) {
+      const mailId = close.dataset.mail;
+      closeReplyForm(mailId);
+      return;
+    }
+  });
+
+  // Robustere sendReplyNested: findet textarea sicher, mit debug-Ausgabe
+  function sendReplyNested(mailId) {
+    const parent = document.getElementById(mailId);
+    if (!parent) {
+      console.warn('Parent not found for', mailId);
+      return;
+    }
+
+    // 1) Suche textarea innerhalb des erwarteten Modal-Knotens
+    let textarea = null;
+    const modalById = parent.querySelector('#replyModal_' + mailId);
+    if (modalById) {
+      textarea = modalById.querySelector('textarea[data-mail="' + mailId + '"]') || modalById.querySelector('textarea');
+    }
+
+    // 2) Fallback: suche nach replyContent mit data-mail im parent
+    if (!textarea) {
+      textarea = parent.querySelector('.replyContent[data-mail="' + mailId + '"]') ||
+                 parent.querySelector('textarea.replyContent') ||
+                 parent.querySelector('textarea[data-mail]') ||
+                 parent.querySelector('textarea');
+    }
+
+    if (!textarea) {
+      console.warn('Textarea still not found for', mailId, { parentHtml: parent.innerHTML });
+      return;
+    }
+
+    const text = textarea.value.trim();
+    console.log('sendReplyNested found textarea for', mailId, 'text length:', text.length);
+
+    const answer = document.createElement('div');
+    answer.className = 'answerItem';
+    answer.innerHTML = `<strong>Antwort:</strong><p style="margin:6px 0 0 0">${escapeHtml(text) || '<em>(leer)</em>'}</p>`;
+    parent.appendChild(answer);
+
+    // now remove modal
+    closeReplyForm(mailId);
+
+    parent.classList.remove('read');
+    parent.classList.add('answered');
+
+    refreshMails();
+  }
+
+  function closeReplyForm(mailId) {
+    const modal = document.getElementById('replyModal_' + mailId);
+    if (modal) modal.remove();
+  }
+
+  function escapeHtml(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  document.addEventListener('keydown', (e) => {
+    const tag = document.activeElement && document.activeElement.tagName;
+    if (tag === 'TEXTAREA' || tag === 'INPUT') {
+      if (e.key === 'Escape') {
+        const modal = document.querySelector('.replyModal');
+        if (modal) closeReplyForm(modal.parentElement.id);
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+      const next = currentIndex + 1 < mails.length ? currentIndex + 1 : currentIndex;
+      focusMail(next);
+      e.preventDefault();
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+      const prev = currentIndex - 1 >= 0 ? currentIndex - 1 : currentIndex;
+      focusMail(prev);
+      e.preventDefault();
+    } else if (e.key === 'Enter') {
+      if (currentIndex >= 0) openReplyModal(mails[currentIndex].id);
+      e.preventDefault();
+    } else if (e.key === 'Escape') {
+      const modal = document.querySelector('.replyModal');
+      if (modal) closeReplyForm(modal.parentElement.id);
+    }
+  });
+
+  const firstUnread = mails.findIndex(m => m.classList.contains('unread'));
+  if (firstUnread !== -1) focusMail(firstUnread);
+});
+</script>
+</body>
+</html>
